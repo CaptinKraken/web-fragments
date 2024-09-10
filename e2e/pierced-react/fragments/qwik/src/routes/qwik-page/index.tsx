@@ -5,6 +5,7 @@ import {
 	useVisibleTask$,
 } from "@builder.io/qwik";
 import { Link, type DocumentHead } from "@builder.io/qwik-city";
+import { Modal } from "~/components/modal";
 
 export default component$(() => {
 	const counter = useSignal(0);
@@ -37,12 +38,22 @@ export default component$(() => {
     }
    `);
 
+	const isOpen = useSignal(false);
+
 	return (
 		<>
 			<div class="qwik-counter-page">
 				<Link href="/qwik-page/details">Go to details</Link>
+				<Modal
+					isOpen={isOpen}
+					onClose$={() => (isOpen.value = false)}
+					title="modaltest"
+				>
+					<p>Testing this modal closes</p>
+				</Modal>
+				<button onClick$={() => (isOpen.value = true)}>Open modal</button>
 				<div style={{ maxHeight: "10rem", overflow: "auto" }}>
-					<p>Qwik Counter</p>
+					<p data-value={counter.value}>Qwik Counter</p>
 					<div class="counter">
 						<button
 							onClick$={() => {
