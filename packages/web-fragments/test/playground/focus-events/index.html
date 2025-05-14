@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="UTF-8" />
+		<title>WF Playground: focus-events</title>
+		<style>
+			fragment-host {
+				border: 1px red dashed;
+			}
+			.focus-counter {
+				font-weight: bold;
+				color: red;
+			}
+			.test-container {
+				margin: 20px;
+				padding: 15px;
+				border: 1px solid #ccc;
+				border-radius: 5px;
+			}
+			.instructions {
+				background-color: #f8f9fa;
+				padding: 15px;
+				border-left: 4px solid #007bff;
+				margin: 20px 0;
+			}
+			.status {
+				font-size: 18px;
+				margin-top: 20px;
+			}
+			.status.success {
+				color: green;
+			}
+			.status.failure {
+				color: red;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>WF Playground: focus-events</h1>
+		
+		<div class="instructions">
+			<h3>Test Instructions:</h3>
+			<p>This test demonstrates the fix for the focus event duplication issue in web fragments.</p>
+			<ol>
+				<li>Click on the input field in the fragment below</li>
+				<li>The focus count should increase by exactly 1</li>
+				<li>If the focus count increases by 2, the issue is still present</li>
+				<li>If the focus count increases by 1, our fix is working correctly</li>
+			</ol>
+		</div>
+
+		<div class="test-container">
+			<h2>Main Document</h2>
+			<input id="main-input" type="text" placeholder="Main document input" />
+			<div>
+				<span>Focus count: </span>
+				<span id="main-focus-count" class="focus-counter">0</span>
+			</div>
+		</div>
+
+		<div class="status" id="test-status"></div>
+
+		<script>
+			// Counter for focus events in the main document
+			let mainFocusCount = 0;
+			const mainInput = document.getElementById('main-input');
+			const mainFocusCounter = document.getElementById('main-focus-count');
+			const testStatus = document.getElementById('test-status');
+			
+			mainInput.addEventListener('focus', () => {
+				mainFocusCount++;
+				mainFocusCounter.textContent = mainFocusCount;
+			});
+
+			// Listen for messages from the fragment
+			window.addEventListener('message', (event) => {
+				if (event.data && event.data.type === 'focusEvent') {
+					const count = event.data.count;
+					const action = event.data.action;
+					
+					if (action === 'check' && count === 1) {
+						testStatus.textContent = 'SUCCESS: Focus event triggered exactly once. Fix is working!';
+						testStatus.className = 'status success';
+					} else if (action === 'check' && count > 1) {
+						testStatus.textContent = `FAILURE: Focus event triggered ${count} times. Fix is not working!`;
+						testStatus.className = 'status failure';
+					}
+				}
+			});
+		</script>
+
+		<script type="module">
+			import { initializeWebFragments } from 'web-fragments';
+			initializeWebFragments();
+		</script>
+
+		<web-fragment fragment-id="focus-events"></web-fragment>
+	</body>
+</html>

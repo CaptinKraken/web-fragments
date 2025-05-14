@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="UTF-8" />
+		<title>focus-events fragment</title>
+		<style>
+			.focus-counter {
+				font-weight: bold;
+				color: blue;
+			}
+			.test-container {
+				margin: 20px;
+				padding: 15px;
+				border: 1px solid #ccc;
+				border-radius: 5px;
+			}
+			.event-log {
+				margin-top: 20px;
+				padding: 10px;
+				background-color: #f5f5f5;
+				border: 1px solid #ddd;
+				max-height: 150px;
+				overflow-y: auto;
+			}
+			.event-log p {
+				margin: 5px 0;
+				font-family: monospace;
+			}
+			.event-log p.duplicate {
+				color: red;
+			}
+		</style>
+	</head>
+	<body>
+		<h2>Focus Events Fragment</h2>
+		<div class="test-container">
+			<input id="fragment-input" type="text" placeholder="Click here to test focus events" />
+			<div>
+				<span>Focus count: </span>
+				<span id="fragment-focus-count" class="focus-counter">0</span>
+				<button id="reset-button">Reset Counter</button>
+			</div>
+			<div class="event-log" id="event-log">
+				<h3>Event Log:</h3>
+			</div>
+		</div>
+
+		<script>
+			// Counter for focus events in the fragment
+			let fragmentFocusCount = 0;
+			const fragmentInput = document.getElementById('fragment-input');
+			const fragmentFocusCounter = document.getElementById('fragment-focus-count');
+			const resetButton = document.getElementById('reset-button');
+			const eventLog = document.getElementById('event-log');
+			
+			// This event listener would be added twice without the fix
+			// Once to the shadow DOM element and once to the wf-body
+			fragmentInput.addEventListener('focus', (event) => {
+				fragmentFocusCount++;
+				fragmentFocusCounter.textContent = fragmentFocusCount;
+				
+				// Log the event
+				const timestamp = new Date().toISOString().substr(11, 12);
+				const logEntry = document.createElement('p');
+				logEntry.textContent = `[${timestamp}] Focus event #${fragmentFocusCount}`;
+				
+				// If we get a second event in quick succession, mark it as a duplicate
+				if (fragmentFocusCount > 1) {
+					const lastLogTime = eventLog.lastChild?.textContent?.match(/\[(\d{2}:\d{2}:\d{2}\.\d{3})\]/);
+					if (lastLogTime) {
+						const lastTime = lastLogTime[1];
+						const currentTime = timestamp;
+						const timeDiff = new Date(`1970-01-01T${currentTime}Z`) - new Date(`1970-01-01T${lastTime}Z`);
+						
+						// If events are less than 50ms apart, likely a duplicate
+						if (timeDiff < 50) {
+							logEntry.classList.add('duplicate');
+							logEntry.textContent += ' (DUPLICATE)';
+						}
+					}
+				}
+				
+				eventLog.appendChild(logEntry);
+				eventLog.scrollTop = eventLog.scrollHeight;
+				
+				// Send message to parent window
+				try {
+					window.parent.postMessage({
+						type: 'focusEvent',
+						count: fragmentFocusCount,
+						action: 'check'
+					}, '*');
+				} catch (e) {
+					console.error('Failed to send message to parent:', e);
+				}
+				
+				console.log('Fragment focus event triggered, count:', fragmentFocusCount);
+			});
+			
+			// Reset button
+			resetButton.addEventListener('click', () => {
+				fragmentFocusCount = 0;
+				fragmentFocusCounter.textContent = '0';
+				
+				// Clear event log
+				while (eventLog.children.length > 1) {
+					eventLog.removeChild(eventLog.lastChild);
+				}
+			});
+		</script>
+	</body>
+</html>
