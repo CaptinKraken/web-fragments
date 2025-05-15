@@ -204,10 +204,54 @@ const WF_CUSTOM_ELEMENTS = new Map([
 	['WF-HEAD', document.head],
 	['WF-BODY', document.body],
 ]);
+
+// Keep track of elements that have been patched to hoist registrations
+const patchedElements = new WeakSet<Element>();
+
+/**
+ * Hoists event registrations and function attachments from a wf-body element to document.body
+ * This ensures that any code attaching to wf-body will actually attach to document.body
+ * @param sourceElement The source element (wf-body)
+ * @param targetElement The target element (document.body)
+ */
+function hoistEventRegistrations(sourceElement: HTMLElement, targetElement: HTMLElement) {
+	// Proxy the addEventListener method
+	const originalAddEventListener = sourceElement.addEventListener;
+	sourceElement.addEventListener = function(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) {
+		// Call the original method
+		originalAddEventListener.call(sourceElement, type, listener, options);
+		
+		// Also attach to document.body
+		targetElement.addEventListener(type, listener, options);
+		return undefined;
+	};
+	
+	// Proxy the removeEventListener method
+	const originalRemoveEventListener = sourceElement.removeEventListener;
+	sourceElement.removeEventListener = function(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) {
+		// Call the original method
+		originalRemoveEventListener.call(sourceElement, type, listener, options);
+		
+		// Also remove from document.body
+		targetElement.removeEventListener(type, listener, options);
+		return undefined;
+	};
+}
+
 function rewriteTagName(node: Element) {
 	const originalTagName = node.tagName;
 	const mappedElement = WF_CUSTOM_ELEMENTS.get(originalTagName);
 	if (mappedElement) {
+		// Only patch once per element
+		if (!patchedElements.has(node)) {
+			patchedElements.add(node);
+			
+			// Hoist event registrations
+			if (originalTagName === 'WF-BODY') {
+				hoistEventRegistrations(node as HTMLElement, mappedElement as HTMLElement);
+			}
+		}
+		
 		Object.defineProperties(node, {
 			clientWidth: {
 				get() {
