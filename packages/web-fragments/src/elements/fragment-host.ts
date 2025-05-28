@@ -23,7 +23,55 @@ export class FragmentHost extends HTMLElement {
 				container: this,
 				headers: { 'x-fragment-mode': 'embedded' },
 				errorHandler: (error: Error) => {
-					this.dispatchEvent(new ErrorEvent('fragment-host-error', { error, bubbles: true, composed: true }));
+					let processedError: Error = error;
+					let gatewayErrorDetails: { message: string; status: number; __isFragmentGatewayError__?: boolean } | null = null;
+
+					// Attempt to extract and parse JSON from the error message.
+					// This is speculative as reframed's error structure isn't documented for this specific case.
+					// We're hoping the server's JSON response body might be part of the message.
+					if (error && typeof error.message === 'string') {
+						try {
+							// Try to find JSON in the message. It might be prefixed/suffixed with other text.
+							// A simple heuristic: look for '{' and '}'
+							const jsonStartIndex = error.message.indexOf('{');
+							const jsonEndIndex = error.message.lastIndexOf('}');
+
+							if (jsonStartIndex !== -1 && jsonEndIndex > jsonStartIndex) {
+								const potentialJson = error.message.substring(jsonStartIndex, jsonEndIndex + 1);
+								const parsed = JSON.parse(potentialJson);
+
+								if (parsed && parsed.__isFragmentGatewayError__ && parsed.message && typeof parsed.status === 'number') {
+									gatewayErrorDetails = {
+										message: parsed.message,
+										status: parsed.status,
+										__isFragmentGatewayError__: true,
+									};
+									// Create a new error object with a more informative message
+									processedError = new Error(
+										`Fragment Host Error: Gateway responded with status ${parsed.status}. Message: "${parsed.message}"`,
+									);
+									// Attach the details to the error object for consumers if they want to inspect it.
+									(processedError as any).gatewayErrorDetails = gatewayErrorDetails;
+								}
+							}
+						} catch (e) {
+							// JSON parsing failed or it wasn't our expected structure.
+							// Silently ignore and proceed with the original error.
+							// console.warn('Failed to parse gateway error from reframed error message:', e);
+						}
+					}
+
+					this.dispatchEvent(
+						new CustomEvent('fragment-host-error', {
+							detail: {
+								originalError: error, // Keep the original error from reframed
+								processedError, // Our potentially enhanced error
+								gatewayErrorDetails, // Structured details if available
+							},
+							bubbles: true,
+							composed: true,
+						}),
+					);
 				},
 			});
 

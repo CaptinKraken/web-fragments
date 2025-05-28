@@ -104,29 +104,91 @@ export function getMiddleware(
 
 	function handleFetchErrors(fragmentRequest: Request, fragmentConfig: FragmentConfig) {
 		return async (fragmentResponseOrError: unknown) => {
-			const {
-				endpoint,
-				onSsrFetchError = () => ({
-					response: new Response(
-						mode === 'development'
-							? `<p>Fetching fragment from upstream endpoint URL: ${endpoint}, failed.</p>`
-							: '<p>There was a problem fulfilling your request.</p>',
-						{ headers: [['content-type', 'text/html']] },
-					),
-					overrideResponse: false,
+			const { fragmentId, endpoint, onSsrFetchError } = fragmentConfig;
+
+			let errorResponse: Response;
+			let upstreamStatus = 500;
+
+			if (fragmentResponseOrError instanceof Response) {
+				upstreamStatus = fragmentResponseOrError.status;
+			}
+
+			if (onSsrFetchError) {
+				try {
+					const result = await onSsrFetchError(fragmentRequest, fragmentResponseOrError);
+					if (result && result.response && result.overrideResponse) {
+						// Consumer wants to override the response completely
+						throw result.response; // Caught by renderErrorResponse
+					} else if (result && result.response) {
+						// Consumer provided a response but doesn't want to fully override.
+						// This case is a bit ambiguous with the current SSRFetchErrorResponse interface.
+						// For now, we'll assume if overrideResponse is not true, we proceed to default error.
+						// This could be a point of future refinement if consumers need to partially override.
+						// Proceed to default JSON error response.
+					}
+					// If onSsrFetchError ran without throwing or returning an override,
+					// it means it might have just logged the error. Proceed to default JSON error.
+				} catch (e) {
+					if (e instanceof Response) {
+						// Consumer's onSsrFetchError threw a Response, treat as override
+						throw e; // Caught by renderErrorResponse
+					}
+					// Consumer's onSsrFetchError threw some other error. Log it and proceed to default JSON.
+					console.error(`Error in onSsrFetchError for fragment ${fragmentId}:`, e);
+				}
+			}
+
+			// Default JSON error response
+			errorResponse = new Response(
+				JSON.stringify({
+					__isFragmentGatewayError__: true,
+					message: `SSR fetch failed for fragment ${fragmentId}. Upstream endpoint: ${endpoint}`,
+					status: upstreamStatus,
 				}),
-			} = fragmentConfig;
+				{
+					status: upstreamStatus, // Use upstream status if available, otherwise 500
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
 
-			const { response, overrideResponse } = await onSsrFetchError(fragmentRequest, fragmentResponseOrError);
-
-			if (overrideResponse) throw response;
-			return response;
+			// The original logic was to return the response if not overriding.
+			// However, the goal is to *throw* if we are not using the consumer's *overridden* response,
+			// so that it's caught by renderErrorResponse and becomes the actual response sent to the client.
+			// If onSsrFetchError was called and didn't result in an early throw (override),
+			// we now throw our new standardized JSON error.
+			throw errorResponse;
 		};
 	}
 
 	function renderErrorResponse(err: unknown) {
-		if (err instanceof Response) return err;
-		throw err;
+		if (err instanceof Response) {
+			// Ensure the response status is an error status if it's our custom JSON error
+			if (err.headers.get('content-type')?.includes('application/json')) {
+				try {
+					const body = JSON.parse(err.bodyUsed ? '' : (err.clone() as any)._bodyInit); // Quick check, might need robust clone and read
+					if (body.__isFragmentGatewayError__ && err.status < 400) {
+						// This shouldn't happen if constructed correctly, but as a safeguard
+						return new Response(err.body, { ...err, status: body.status || 500 });
+					}
+				} catch (e) {
+					// If parsing fails, it's not our JSON error, or body is not JSON.
+				}
+			}
+			return err;
+		}
+		// Fallback for non-Response errors
+		console.error('Unhandled error in gateway:', err);
+		return new Response(
+			JSON.stringify({
+				__isFragmentGatewayError__: true,
+				message: 'An unexpected error occurred in the fragment gateway.',
+				status: 500,
+			}),
+			{
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
 	}
 
 	// When embedding an SSRed fragment, we need to make

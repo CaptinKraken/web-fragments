@@ -42,6 +42,10 @@ export const headerData = {
           text: "Troubleshooting",
           href: getPermalink("/documentation/troubleshooting"),
         },
+        {
+          text: "Error Handling",
+          href: getPermalink("/documentation/error-handling"),
+        },
       ],
     },
     {
